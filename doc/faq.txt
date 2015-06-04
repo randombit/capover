@@ -1,0 +1,108 @@
+CapOver LSM FAQ
+
+· Section 1: Basics
+
+1.1 What is CapOver?
+
+CapOver is a Linux Security Module (LSM) which allows you to specify a
+policy stating that certain programs are to gain some set of POSIX.1e
+capabilities. In Linux (which implements a draft of POSIX.1e), a
+capability is a fairly coarse-grained privilege that allows access to
+a class of protected operations. For example, there is a capability
+that allows a process to bind to ports below 1024.
+
+1.2 Why is this useful?
+
+CapOver lets you split up what a process is allowed to do, rather than
+forcing you to run it as root. For example, you could give a server
+the ability to bind to a reserved port, without giving it the ability
+to do things like load kernel modules or read /etc/shadow. Of course
+typically the server would not do this intentionally, but bugs have
+been known to happen... basically the idea is to ensure that when (not
+if) a serious bug is found, the damage can be limited.
+
+· Section 2: Design
+
+2.1 But why not just do...
+
+I have seen a couple of comments (one on slashdot.jp, where a story
+about CapOver apparently got put up a while back) from people who
+seemed to think that it was possible to do what CapOver does using
+normal Unix DAC (user/group). While it is possible to emulate parts of
+CapOver's abilities using DAC, much of it is either extremely messy,
+or totally impossible. Typically these suggestions go something like:
+
+     # cp /usr/bin/gpg /usr/bin/gpg2
+     # chgrp admin /usr/bin/gpg2
+     # chmod 4750 /usr/bin/gpg2
+     # chmod 755 /usr/bin/gpg
+as a rough equivalent to the policy
+
+     ipc_lock {
+        path /usr/bin/gpg
+        group admin
+     }
+
+In this case it works, sort of. However, the following problems occur:
+1) it's annoying to remember that /usr/bin/gpg2 can lock memory while
+/usr/bin/gpg doesn't (even more annoying if it results in a hard
+error), 2) it doesn't scale to multiple groups, 3) it doesn't allow
+for per-user restrictions, and finally, it fails to solve the main
+problem CapOver exists to solve: that GnuPG is still running
+needlessly as root (at least in some cases).
+
+2.2 Why not use extended attributes?
+
+Linux 2.6 supports extended attributes, which are basically
+string=value pairs you can attach to files or directories (currently,
+they are used for POSIX ACL support). Logically, it would make a good
+deal of sense to include information about capabilities in here as
+well. There are some problems with this, however. For one, at this
+time only some filesystems (ext2, ext3, ReiserFS, and XFS) support EA,
+so someone using another filesystem would be left out. Also, EA
+support has to be specifically enabled, which isn't common. And there
+is no support in the VFS layer, meaning we would have to do some
+low-level nastiness in order to get it to work at all, which is the
+real blocker.
+
+It also prevents you from running all of a user's processes with
+specific capabilities. While some may regard this as a feature, it is
+convenient to be able to give out 'partial root' accounts for specific
+tasks.
+
+Lastly, storing capabilities in this way makes things hard to track
+and hard to audit. You can easily find out exactly what privileges are
+given by looking at the files in /proc/sys/kernel/cap_over; with EA
+you would have to run over the entire filesystem looking at the EAs of
+each binary.
+
+· Section 3: Dangers
+
+3.1 Is there any risk to using CapOver?
+
+Naturally. After all, we are mucking around with stuff that could (if
+you decided to be foolish) give every user on the system root-like
+powers. And I am still working on the correctness proof, until I
+finish that it is possible CapOver has some bugs in it.
+
+At this time it hasn't been independently audited for security bugs,
+nor has any experienced LSM hacker signed off on it. For that reason,
+I would strongly suggest you not use the current version in a
+production system without doing some testing of your own.
+
+Some badly behaving programs may assume that only uid=0 has powers,
+and abort without checking and seeing if they can actually do
+it. These seem rather rare (it's much easier and less brittle to just
+plow ahead and check error returns). This is easy to fix, simply
+ignore those programs, continue to run them as root (or setuid root),
+and hope for the best.
+
+Secondly, it's possible that bugs similar in spirit to the one that
+occurred with sendmail back when Linux 2.2 came out will recur when
+using CapOver. Unless a program actually checks using libcap, it has
+no way of knowing if it has powers or not. If it assumes that if its
+uid is not zero then it has no magic powers to give away (for example,
+to a child process), then it will not try to drop them. In theory
+(maybe even in practice) this could cause CapOver to be more trouble
+than it is worth.
+

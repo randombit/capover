@@ -1,0 +1,35 @@
+
+* 0.9.3, October 10, 2004
+ - Updates for more recent 2.6 kernels
+
+* 0.9.2, December 9, 2003
+ - Added a semaphore to guard accees
+ - The policy compiler understands 'users any' and 'groups any'
+ - All warnings from the compiler go to stderr
+ - Removed support for CAP_SETPCAP
+
+* 0.9.1, December 7, 2003
+ - The policy compiler handles symlinks much more sensibly
+ - The policy compiler couldn't handle groups named 'users', 'audit', etc
+
+* 0.9, December 6, 2003
+ - Major rethinking: rule checks done at program load, not during system call
+ - Fixed locking problem with path-based checking
+ - The policy compiler thought 'users' was spelled 'userss'
+ - Much better error checking in the policy compiler
+ - The policy compiler handles paths more sanely
+ - Privilege use can be selectively audited
+ - Fixed a minor memory leak in the module
+ - Added some hints in the docs on how to write a policy
+ - Major cleanups inside the module
+
+* 0.8, December 5, 2003
+ - Many bug fixes
+ - Removed several arbitrary limits in the module
+ - Optional support for path-based checking (UNSAFE)
+ - Totally rewrote the policy compiler
+ - Completely new, much more flexible, policy language
+ - Autconfiscated building the module
+
+* 0.7, December 3, 2003
+ - First public release

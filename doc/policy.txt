@@ -1,0 +1,145 @@
+Capability Override LSM Policy mini-HOWTO
+Jack Lloyd (lloyd@randombit.net)
+December 7, 2003
+
+* Basic Policy Format
+
+The basic format of the policy file should be pretty obvious from looking at
+the included example (example.conf), but I'll lay it out here as well:
+
+cap_name[,cap_name2,...] {
+   [user user1[,user2,[...]]]
+   [group group1[,grup2,[...]]]
+   [audit (on|1|off|0)]
+   [path /path/number/one]
+   [path /path/number/two]
+   [...]
+}
+
+Going down bit by bit:
+
+cap_name* is the name(s) of the capability or capabilities that this rule
+applies to. Typically this is the same as the macro (defined in
+include/linux/capability.h), but lowercased and with the initial CAP_
+removed. In a couple cases it's been shortened further; CAP_NET_BIND_SERVICE is
+just "net_bind", and CAP_LINUX_IMMUTABLE is "fs_immutable". For a complete list
+of the capabilities (and what they do), the best place to look is in Linux's
+capability.h, that being the definitive source.
+
+user (or users) is a list of one or more user names. A process running with a
+uid or euid which is the same as one of the users on the list is given access
+to the capability represented by cap_name (assuming any and all other
+conditions hold).
+
+group (or groups) worked just like user/users, except, obviously, it looks at
+the gid/egid of the process.
+
+audit specifies if processes getting extra capabilities under this rule should
+be audited (audit data goes to the kernel log). The default (if you don't use
+the audit command in a particular rule), is to use the value of
+default_audit. You can set this at any point in the file (putting it inside a
+rule is a bad idea!), it takes the same values as 'audit'. By default,
+default_audit is on (ie, everything that's not explicitly marked as not being
+audited, is). You should always leave default_audit on, and turn off auditing
+just for rules you're absolutely sure you don't want audit information for.
+
+path means that if the process is not named by one of the paths named there,
+then it doesn't get the capability. If you don't set path, then it defaults to
+"path any" (you can write this out if you want to be explicit), which means any
+process matching the uid/gid requirements gets the capability.
+
+You have to set at least one of user, group, and path, otherwise the rule
+doesn't make sense and will be ignored.
+
+Keep in mind that the capability is only granted if ALL the conditions hold.
+In particular, watch out for this case:
+
+cap_name {
+   user someuser
+   group somegrp
+   path /some/binary
+}
+
+You might assume this means "Give /some/binary the capability cap_name if it's
+run by someuser or by anyone in somegrp", but it actually means "if it's run by
+someuser AND the gid/egid is somegrp". If you want to do OR between users and
+groups, you have to write two separate rules, one for each. This is potentially
+confusing, due to the fact that the user/group/path settings are individually
+OR conditions (since obviously a binary can't have two different paths, and so
+on).
+
+Try to keep the number of alternate users/groups/paths you use down, as, due
+the way the module stores them, you get a combinatorial explosion if you use a
+lot of rules. For example, a rule that specifies 2 possible users, 2 possible
+groups, and 2 possible paths, causes 8 rules to be stored by the module. This
+is OK, there is no fixed upper limit, and the searches are only done when a
+program is loaded (so the overhead shouldn't be noticeable).
+
+Lastly, you can do whatever you want with the brace style (the policy compiler
+is pretty smart about it). K&R style seems to be the most natural to read in
+this case, so that's what I've gone with.
+
+* Using A Policy
+
+Once you've got a policy nice and set, run it through policy.pl; this will dump
+out either some errors, or a bunch of junk that you can pass to sysctl(8) [with
+the -p option] to set everything up. You can change the variable OUTPUT_FORMAT
+at the top of the script if you want a different format (there are two others
+that produce shell scripts that do the same things in different ways). The
+sysctl -p method is probably the most useful.
+
+Note that writing something new to the sysctl or /proc file erases any previous
+settings (for that capability), so "echo > /proc/sys/kernel/cap_over/<somecap>"
+is useful for immediately removing all access to a capability (except for root,
+of course). However, keep in mind that this does not revoke capabilities
+granted to processes already running.
+
+* Writing a Policy
+
+A first pass is to find all setuid root binaries on your system, and figure out
+which ones don't need to actually have euid=0 (for example, passwd needs to
+read/write to /etc/shadow). You actually can get around this by using
+capabilities like dac_override and fowner, but it's probably easier to just
+continue letting them run as root. A good way to do this is with:
+
+find /bin /usr/bin /sbin /usr/sbin -perm +04000 -a -uid 0
+
+Then figure out which capabilities that program actually needs. For example,
+/bin/ping sends ICMP messages, so it needs CAP_NET_RAW.
+
+Another thing to consider is those things that are run directly as root (find
+them with 'ps uaxww | grep ^root'). For example, network servers always start
+as root, and usually only need a subset of root's capabilities. This is a bit
+harder, since typically you would have to edit the init scripts to deal with
+it. For example, OpenSSH needs net_bind and setuid/setgid (so it can change the
+UID to match that of the user logging in) and dac_read_search. Specifically it
+has to be able to read the host secret keys, /etc/shadow, and so on. But it
+doesn't have to write to any of these things, so we don't need to give it
+dac_override.
+
+If the policy compilers warns you about something, make sure you understand
+*why* it's warning you before ignoring it. There are good reasons for using
+rules that will produce a warning from the compiler, but there are also good
+reasons not to.
+
+In most cases, be extremely careful about rules that don't provide specific
+path names (ALWAYS have auditing on for such rules). The capabilities for which
+arbitrary use can be used to immediately (or at least very easily) get root
+privs is (at least): chown, dac_override, fowner, fsetid, setgid, setuid,
+sys_module, sys_rawio, sys_ptrace, sys_admin, and mknod. Probably most of the
+others can be used this way too.
+
+The most useful case for giving arbitrary access to a user is when they've got
+root right now. For example, your network admin account might have a rule
+like:
+
+net_bind,net_broadcast,net_admin,net_raw {
+  user network # special network admin account
+  audit on
+  path any
+}
+
+This is not for security reasons (odds are fairly high that a sufficiently
+motivated person could gain euid == 0 with the above rule), but for the same
+reason people don't use root as their user account. It allows privilege
+separation, which is a good thing.

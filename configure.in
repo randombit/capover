@@ -1,0 +1,22 @@
+AC_INIT(cap_over.c)
+
+KSRC=/lib/modules/`uname -r`/build
+KMOD=/lib/modules/`uname -r`
+SYSTEM=`uname -s`
+
+# I can just imagine the bug report...
+if test x$SYSTEM != xLinux
+then
+  AC_MSG_ERROR("A Linux Security Module doesn't work on $SYSTEM (!!)")
+fi
+
+AC_ARG_WITH(linux,  [  --with-linux=dir        Path to Linux source tree], KSRC=$withval)
+AC_ARG_WITH(moddir, [  --with-moddir=dir       Path to Linux modules directory], KMOD=$withval)
+
+AC_SUBST(KSRC)
+AC_SUBST(KMOD)
+
+AC_MSG_NOTICE([Using Linux kernel source at $KSRC])
+AC_MSG_NOTICE([Installing module to $KMOD/kernel/security])
+
+AC_OUTPUT(Makefile)

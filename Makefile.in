@@ -1,0 +1,20 @@
+KSRC=@KSRC@
+KMOD=@KMOD@
+
+RM=rm -f
+
+obj-m = cap_over.o
+
+build:
+	make -C $(KSRC) SUBDIRS=`pwd` modules
+
+install:
+	cp -f cap_over.ko $(KMOD)/kernel/security/
+
+clean:
+	$(RM) *.o *.ko *.mod.o *.mod.c .*.{cmd,flags}
+	$(RM) config.status config.log
+	$(RM) -r autom4te*.cache
+
+distclean: clean
+	$(RM) Makefile
